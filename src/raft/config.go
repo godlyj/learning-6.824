@@ -179,7 +179,11 @@ func (cfg *config) start1(i int) {
 						// some server has already committed a different value for this entry!
 						err_msg = fmt.Sprintf("commit index=%v server=%v %v != server=%v %v",
 							m.CommandIndex, i, m.Command, j, old)
+					}else{
+						//DPrintf("commit index=%v server=%v %v == server=%v %v",
+							//m.CommandIndex, i, m.Command, j, old)
 					}
+
 				}
 				_, prevok := cfg.logs[i][m.CommandIndex-1]
 				cfg.logs[i][m.CommandIndex] = v
@@ -316,7 +320,7 @@ func (cfg *config) checkOneLeader() int {
 		lastTermWithLeader := -1
 		for term, leaders := range leaders {
 			if len(leaders) > 1 {
-				cfg.t.Fatalf("term %d has %d (>1) leaders", term, len(leaders))
+				cfg.t.Fatalf(  "term %d has %d (>1) leaders %d %d", term, len(leaders),leaders[0],leaders[1])
 			}
 			if term > lastTermWithLeader {
 				lastTermWithLeader = term
@@ -431,6 +435,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 	t0 := time.Now()
 	starts := 0
 	for time.Since(t0).Seconds() < 10 {
+
 		// try all the servers, maybe one is the leader.
 		index := -1
 		for si := 0; si < cfg.n; si++ {
@@ -441,18 +446,27 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 				rf = cfg.rafts[starts]
 			}
 			cfg.mu.Unlock()
+
+
 			if rf != nil {
 				index1, _, ok := rf.Start(cmd)
+				//rf.pmu.Lock()
+				//DPrintf("find node %d  state %d  index %d\n",rf.me,rf.state,index1)
+				//rf.pmu.Unlock()
 				if ok {
 					index = index1
 					break
 				}
 			}
+
 		}
 
 		if index != -1 {
 			// somebody claimed to be the leader and to have
 			// submitted our command; wait a while for agreement.
+
+			//DPrintf("leader get log!!!!!\n")
+
 			t1 := time.Now()
 			for time.Since(t1).Seconds() < 2 {
 				nd, cmd1 := cfg.nCommitted(index)

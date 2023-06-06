@@ -1,0 +1,44 @@
+# Lab2C
+
+实验2C的主要内容就是持久化，依据论文内容，需要持久化的部分是三个：
+
+votedfor、log、currentTerm
+
+持久化的代码依据已有的提示很容易就能够写出来。
+
+```
+func (rf *Raft) persist() {
+	// Your code here (2C).
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.log)
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
+}
+
+func (rf *Raft) readPersist(data []byte) {
+	if data == nil || len(data) < 1 { // bootstrap without any state?
+		return
+	}
+	// Your code here (2C).
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	d.Decode(&rf.currentTerm)
+	d.Decode(&rf.votedFor)
+	d.Decode(&rf.log)
+}
+
+```
+
+
+但是在多次测试的时候，还是发现存在不小的概率会出现失败，并且失败集中在Figure 8 （unreliable）上。
+
+目前估计的原因是在于log对齐的时间过长，导致一直无法产生提交，出现如下错误：
+
+one(1478) failed to reach agreement
+
+目前还在寻找解决办法。

@@ -87,6 +87,9 @@ func TestReElection2A(t *testing.T) {
 }
 
 func TestBasicAgree2B(t *testing.T) {
+
+	//return
+
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -114,6 +117,7 @@ func TestBasicAgree2B(t *testing.T) {
 // each command is sent to each peer just once.
 //
 func TestRPCBytes2B(t *testing.T) {
+	//return
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -145,6 +149,7 @@ func TestRPCBytes2B(t *testing.T) {
 }
 
 func TestFailAgree2B(t *testing.T) {
+	//return
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -179,6 +184,7 @@ func TestFailAgree2B(t *testing.T) {
 }
 
 func TestFailNoAgree2B(t *testing.T) {
+	//return
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -230,6 +236,7 @@ func TestFailNoAgree2B(t *testing.T) {
 }
 
 func TestConcurrentStarts2B(t *testing.T) {
+	//return
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -563,11 +570,12 @@ func TestPersist12C(t *testing.T) {
 	for i := 0; i < servers; i++ {
 		cfg.start1(i)
 	}
+	//DPrintf("111111111111111111111111111111")
 	for i := 0; i < servers; i++ {
 		cfg.disconnect(i)
 		cfg.connect(i)
 	}
-
+	//DPrintf("222222222222222222222222222222")
 	cfg.one(12, servers, true)
 
 	leader1 := cfg.checkOneLeader()

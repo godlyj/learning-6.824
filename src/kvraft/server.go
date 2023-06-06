@@ -3,13 +3,14 @@ package kvraft
 import (
 	"../labgob"
 	"../labrpc"
-	"log"
 	"../raft"
+	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -18,15 +19,24 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-
 type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	OpId     int64
+	ClientId int64
+	Index    int
+	Term     int
+	OpType   string
+	OpKey    string
+	OpValue  string
+
 }
 
 type KVServer struct {
 	mu      sync.Mutex
+	pmu      sync.Mutex
+
 	me      int
 	rf      *raft.Raft
 	applyCh chan raft.ApplyMsg
@@ -35,16 +45,111 @@ type KVServer struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
+	sequenceMapper map[int64]int64
+	requestMapper  map[int]chan Op
+	kvStore        map[string]string
 }
-
-
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
+
+	var isLeader bool
+	clientOp := Op{OpType: "Get", OpKey: args.Key, OpId: args.SequenceId, ClientId: args.ClientId}
+	clientOp.Index, clientOp.Term, isLeader = kv.rf.Start(clientOp)
+	kv.pmu.Lock()
+	//DPrintf("Get  key:%v  seqId:%d  clientID:%d" ,args.Key, args.SequenceId,args.ClientId)
+	kv.pmu.Unlock()
+	if !isLeader {
+		reply.Err = ErrWrongLeader
+		return
+	}
+
+	//set connection
+	ch := kv.getChannel(clientOp.Index)
+
+	//delete connection
+	defer func() {
+		kv.mu.Lock()
+		delete(kv.requestMapper, clientOp.Index)
+		kv.mu.Unlock()
+	}()
+
+	timer := time.NewTicker(500 * time.Millisecond)
+
+	defer timer.Stop()
+	select {
+	case op := <-ch:
+		kv.mu.Lock()
+		opTerm := op.Term
+		kv.mu.Unlock()
+		if clientOp.Term != opTerm {
+			reply.Err = ErrWrongLeader
+			return
+		} else {
+			reply.Err = OK
+			kv.mu.Lock()
+			reply.Value = kv.kvStore[args.Key]
+			kv.mu.Unlock()
+			return
+		}
+	case <-timer.C:
+		reply.Err = ErrWrongLeader
+	}
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
+	var isLeader bool
+
+	clientOp := Op{OpType: args.Op, OpKey: args.Key, OpValue: args.Value, OpId: args.SequenceId, ClientId: args.ClientId}
+	kv.pmu.Lock()
+	//DPrintf("Put append Op:%v key:%v value:%v seqId:%d clientID:%d" ,args.Op,args.Key,args.Value, args.SequenceId,args.ClientId)
+	kv.pmu.Unlock()
+	clientOp.Index, clientOp.Term, isLeader = kv.rf.Start(clientOp)
+
+	if !isLeader {
+		reply.Err = ErrWrongLeader
+		return
+	}
+
+
+	// leader is found
+	ch := kv.getChannel(clientOp.Index)
+
+	defer func() {
+		kv.mu.Lock()
+		delete(kv.requestMapper, clientOp.Index)
+		kv.mu.Unlock()
+	}()
+
+	timer := time.NewTicker(500 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case op := <-ch:
+		kv.mu.Lock()
+		opTerm := op.Term
+		kv.mu.Unlock()
+		if clientOp.Term != opTerm {
+			reply.Err = ErrWrongLeader
+		} else {
+			reply.Err = OK
+		}
+	case <-timer.C:
+		reply.Err = ErrWrongLeader
+	}
 }
+
+
+func (kv *KVServer) getChannel(index int) chan Op {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	ch, ok := kv.requestMapper[index]
+	if !ok {
+		ch = make(chan Op, 1)
+		kv.requestMapper[index] = ch
+	}
+	return ch
+}
+
 
 //
 // the tester calls Kill() when a KVServer instance won't
@@ -82,20 +187,59 @@ func (kv *KVServer) killed() bool {
 // for any long-running work.
 //
 func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int) *KVServer {
-	// call labgob.Register on structures you want
-	// Go's RPC library to marshall/unmarshall.
+
 	labgob.Register(Op{})
 
 	kv := new(KVServer)
 	kv.me = me
 	kv.maxraftstate = maxraftstate
 
-	// You may need initialization code here.
-
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
-	// You may need initialization code here.
+	kv.sequenceMapper = make(map[int64]int64)
+	kv.requestMapper = make(map[int]chan Op)
+	kv.kvStore = make(map[string]string)
+
+	go kv.serverMonitor()
 
 	return kv
+}
+func (kv *KVServer) serverMonitor() {
+	for {
+		if kv.killed() {
+			return
+		}
+		select {
+		case msg := <-kv.applyCh:
+			index := msg.CommandIndex
+			term := msg.CommandTerm
+			op := msg.Command.(Op)
+			kv.mu.Lock()
+			sequenceInMapper, hasSequence := kv.sequenceMapper[op.ClientId]
+			op.Term = term
+			kv.pmu.Lock()
+			//DPrintf("~~~~~get command %v sID:%v  CID:%d   %d  ",op.OpType,op.OpId,op.ClientId,sequenceInMapper)
+			kv.pmu.Unlock()
+			//qu chong
+			if !hasSequence || op.OpId > sequenceInMapper {
+				kv.pmu.Lock()
+				//DPrintf("get command %v",op.OpType)
+				kv.pmu.Unlock()
+				switch op.OpType {
+				case "Put":
+					kv.kvStore[op.OpKey] = op.OpValue
+				case "Append":
+					kv.kvStore[op.OpKey] += op.OpValue
+				}
+				kv.sequenceMapper[op.ClientId] = op.OpId
+				kv.pmu.Lock()
+				//DPrintf("now key:%v value:%v",op.OpKey,kv.kvStore[op.OpKey])
+				kv.pmu.Unlock()
+			}
+			kv.mu.Unlock()
+			// send message to op chan
+			kv.getChannel(index) <- op
+		}
+	}
 }

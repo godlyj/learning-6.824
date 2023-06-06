@@ -151,6 +151,8 @@ func partitioner(t *testing.T, cfg *config, ch chan bool, done *int32) {
 // maxraftstate is a positive number, the size of the state for Raft (i.e., log
 // size) shouldn't exceed 8*maxraftstate. If maxraftstate is negative,
 // snapshots shouldn't be used.
+
+
 func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash bool, partitions bool, maxraftstate int) {
 
 	title := "Test: "
@@ -201,19 +203,26 @@ func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash
 				clnts[cli] <- j
 			}()
 			last := ""
+			index := 0
 			key := strconv.Itoa(cli)
 			Put(cfg, myck, key, last)
 			for atomic.LoadInt32(&done_clients) == 0 {
+				index++
 				if (rand.Int() % 1000) < 500 {
 					nv := "x " + strconv.Itoa(cli) + " " + strconv.Itoa(j) + " y"
 					// log.Printf("%d: client new append %v\n", cli, nv)
 					Append(cfg, myck, key, nv)
 					last = NextValue(last, nv)
+
+					//DPrintf("$$$$$$$$$$$$$$$$$$$$$$last:%v   index:%d", last,index)
 					j++
 				} else {
 					// log.Printf("%d: client new get %v\n", cli, key)
 					v := Get(cfg, myck, key)
+					//DPrintf("###########key %v, wanted:\n%v\n, got\n%v\n index:%d leaderId:%d clientID:%d",key, last, v,index ,myck.leaderId,myck.clientId)
+
 					if v != last {
+						//log.Fatalf("value %v but %v\n  other",last,v)
 						log.Fatalf("get wrong value, key %v, wanted:\n%v\n, got\n%v\n", key, last, v)
 					}
 				}
@@ -446,21 +455,25 @@ func GenericTestLinearizability(t *testing.T, part string, nclients int, nserver
 }
 
 func TestBasic3A(t *testing.T) {
+	//return
 	// Test: one client (3A) ...
 	GenericTest(t, "3A", 1, false, false, false, -1)
 }
 
 func TestConcurrent3A(t *testing.T) {
+	//return
 	// Test: many clients (3A) ...
 	GenericTest(t, "3A", 5, false, false, false, -1)
 }
 
 func TestUnreliable3A(t *testing.T) {
+	//return
 	// Test: unreliable net, many clients (3A) ...
 	GenericTest(t, "3A", 5, true, false, false, -1)
 }
 
 func TestUnreliableOneKey3A(t *testing.T) {
+	//return
 	const nservers = 3
 	cfg := make_config(t, nservers, true, -1)
 	defer cfg.cleanup()
@@ -496,6 +509,7 @@ func TestUnreliableOneKey3A(t *testing.T) {
 // doesn't go through until the partition heals.  The leader in the original
 // network ends up in the minority partition.
 func TestOnePartition3A(t *testing.T) {
+	//return
 	const nservers = 5
 	cfg := make_config(t, nservers, false, -1)
 	defer cfg.cleanup()
