@@ -60,6 +60,7 @@ func (ps *Persister) SaveStateAndSnapshot(state []byte, snapshot []byte) {
 func (ps *Persister) ReadSnapshot() []byte {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
+	//DPrintf("Read snapshot")
 	return ps.snapshot
 }
 

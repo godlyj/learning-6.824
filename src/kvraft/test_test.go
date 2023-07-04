@@ -326,7 +326,7 @@ func GenericTestLinearizability(t *testing.T, part string, nclients int, nserver
 		title = title + "one client"
 	}
 	title = title + ", linearizability checks (" + part + ")" // 3A or 3B
-
+	//DPrintf("START")
 	cfg := make_config(t, nservers, unreliable, maxraftstate)
 	defer cfg.cleanup()
 
@@ -456,7 +456,7 @@ func GenericTestLinearizability(t *testing.T, part string, nclients int, nserver
 
 func TestBasic3A(t *testing.T) {
 	//return
-	// Test: one client (3A) ...
+	//Test: one client (3A) ...
 	GenericTest(t, "3A", 1, false, false, false, -1)
 }
 

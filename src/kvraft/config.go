@@ -376,12 +376,12 @@ func make_config(t *testing.T, n int, unreliable bool, maxraftstate int) *config
 	cfg.nextClientId = cfg.n + 1000 // client ids start 1000 above the highest serverid
 	cfg.maxraftstate = maxraftstate
 	cfg.start = time.Now()
-
+	//DPrintf("STA1")
 	// create a full set of KV servers.
 	for i := 0; i < cfg.n; i++ {
 		cfg.StartServer(i)
 	}
-
+	//DPrintf("STA2")
 	cfg.ConnectAll()
 
 	cfg.net.Reliable(!unreliable)

@@ -4,6 +4,7 @@ import (
 	"../labgob"
 	"../labrpc"
 	"../raft"
+	"bytes"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -48,6 +49,9 @@ type KVServer struct {
 	sequenceMapper map[int64]int64
 	requestMapper  map[int]chan Op
 	kvStore        map[string]string
+	//for snapshot
+	//lastIncludedIndex int
+	lastAppliedIndex int
 }
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
@@ -193,18 +197,41 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv := new(KVServer)
 	kv.me = me
 	kv.maxraftstate = maxraftstate
+	kv.lastAppliedIndex=0
 
-	kv.applyCh = make(chan raft.ApplyMsg)
+	snapshot := persister.ReadSnapshot()
+	if snapshot != nil && len(snapshot) > 0 {
+		kv.updateMappersFromSnapshot(snapshot)
+	}
+ 	//DPrintf("Start Server!\n");
+	kv.applyCh = make(chan raft.ApplyMsg,1)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
-
+	//DPrintf("Make raft\n")
 	kv.sequenceMapper = make(map[int64]int64)
 	kv.requestMapper = make(map[int]chan Op)
 	kv.kvStore = make(map[string]string)
-
+	//DPrintf("Start serverMonitor!\n");
 	go kv.serverMonitor()
+	//DPrintf("Start snapshotMonitor!\n");
+	go kv.snapshotMonitor()
 
 	return kv
 }
+
+
+func (kv *KVServer) updateMappersFromSnapshot(snapshot []byte) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	r := bytes.NewBuffer(snapshot)
+	d := labgob.NewDecoder(r)
+	var kvStore map[string]string
+	var sequenceMapper map[int64]int64
+	if d.Decode(&kvStore) == nil && d.Decode(&sequenceMapper) == nil {
+		kv.kvStore, kv.sequenceMapper = kvStore, sequenceMapper
+	}
+}
+
+
 func (kv *KVServer) serverMonitor() {
 	for {
 		if kv.killed() {
@@ -212,8 +239,15 @@ func (kv *KVServer) serverMonitor() {
 		}
 		select {
 		case msg := <-kv.applyCh:
+			if msg.Issnapshot {
+				//DPrintf("Find snapshot!\n")
+				kv.updateMappersFromSnapshot(msg.Snapshot)
+				continue
+			}
 			index := msg.CommandIndex
 			term := msg.CommandTerm
+			kv.lastAppliedIndex = index
+
 			op := msg.Command.(Op)
 			kv.mu.Lock()
 			sequenceInMapper, hasSequence := kv.sequenceMapper[op.ClientId]
@@ -242,4 +276,34 @@ func (kv *KVServer) serverMonitor() {
 			kv.getChannel(index) <- op
 		}
 	}
+}
+func (kv *KVServer) snapshotMonitor() {
+	for {
+		if kv.killed() || kv.maxraftstate == -1 {
+			return
+		}
+		if kv.rf.ExceedLogSize(kv.maxraftstate) {
+			//DPrintf("Need snapshot  maxraftstate:%d",kv.maxraftstate)
+			//save state
+			kv.mu.Lock()
+			snapshot := kv.getSnapshot()
+			kv.mu.Unlock()
+
+			//tells Raft that it can discard old log entries
+			if snapshot != nil {
+				//DPrintf("start snapshot")
+				kv.rf.TakeSnapshot(snapshot,kv.lastAppliedIndex)
+			}
+		}
+		time.Sleep(1 * time.Millisecond)
+	}
+}
+
+func (kv *KVServer) getSnapshot() []byte {
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(kv.kvStore)
+	e.Encode(kv.sequenceMapper)
+
+	return w.Bytes()
 }

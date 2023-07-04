@@ -8,7 +8,10 @@ package raft
 // test with the original before submitting.
 //
 
-import "testing"
+import (
+	"log"
+	"testing"
+)
 import "fmt"
 import "time"
 import "math/rand"
@@ -299,7 +302,9 @@ loop:
 					break
 				}
 				cmds = append(cmds, ix)
+				log.Printf("index %d  cmd:%v", index,ix)
 			} else {
+
 				t.Fatalf("value %v is not an int", cmd)
 			}
 		}
@@ -322,6 +327,7 @@ loop:
 				}
 			}
 			if ok == false {
+
 				t.Fatalf("cmd %v missing in %v", x, cmds)
 			}
 		}
@@ -338,6 +344,7 @@ loop:
 }
 
 func TestRejoin2B(t *testing.T) {
+	//return
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -376,6 +383,7 @@ func TestRejoin2B(t *testing.T) {
 }
 
 func TestBackup2B(t *testing.T) {
+	//return
 	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
@@ -448,6 +456,7 @@ func TestBackup2B(t *testing.T) {
 }
 
 func TestCount2B(t *testing.T) {
+	//return
 	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
